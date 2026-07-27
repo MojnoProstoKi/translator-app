@@ -81,6 +81,24 @@ public struct SegmentTranslation: Codable, Sendable {
     }
 }
 
+/// A finalized speech segment as persisted in a `SessionTranscript` — deliberately leaner than
+/// the live `SpeechSegment` (data-model.md → SessionTranscript). Once finalized, `sessionId`
+/// duplicates the transcript's own id, `sourceType`/`startedAt` are already covered by the
+/// transcript's own `audioSources`/`startedAt`, and `state`/`translation.isFinal` are always
+/// `.finalized`/`true` — none of that carries information a person reading the saved file back
+/// actually needs, so only the recognized English text and its Russian translation remain.
+public struct TranscriptSegment: Codable, Sendable, Identifiable {
+    public let id: UUID
+    public let originalText: String
+    public let translatedText: String
+
+    public init(id: UUID, originalText: String, translatedText: String) {
+        self.id = id
+        self.originalText = originalText
+        self.translatedText = translatedText
+    }
+}
+
 /// Persistent, per-session record of finalized speech segments and their translations
 /// (data-model.md → SessionTranscript). Deliberately contains no audio (FR-011).
 public struct SessionTranscript: Codable, Sendable {
@@ -88,7 +106,7 @@ public struct SessionTranscript: Codable, Sendable {
     public let startedAt: Date
     public let endedAt: Date?
     public let audioSources: Set<AudioSourceType>
-    public let finalizedSegments: [SpeechSegment]
+    public let finalizedSegments: [TranscriptSegment]
 
     public init(session: TranslationSession) {
         precondition(
@@ -99,7 +117,9 @@ public struct SessionTranscript: Codable, Sendable {
         self.startedAt = session.startedAt
         self.endedAt = session.endedAt
         self.audioSources = session.audioSources
-        self.finalizedSegments = session.segments
+        self.finalizedSegments = session.segments.map {
+            TranscriptSegment(id: $0.id, originalText: $0.recognizedText, translatedText: $0.translation.text)
+        }
     }
 }
 

@@ -19,47 +19,48 @@ public struct OverlayView: View {
                     .foregroundStyle(.secondary)
                     .padding(.bottom, 2)
             }
-            // Always visible during a session: lets the user see *when* to start speaking/play
-            // audio instead of guessing (requested explicitly) — audio capture starts as soon
-            // as the session does, even while recognition/translation assets are still being
-            // checked, so this reacts before "Подготовка…"/lines do.
-            LevelMeterView(level: viewModel.audioLevel)
-                .frame(height: 18)
-                .padding(.bottom, 2)
 
-            if let errorText = viewModel.errorBannerText {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text(errorText)
-                        .font(.system(size: 13, weight: .medium))
+            // Scrollable so a longer session's history (more lines than fit the panel) stays
+            // reachable instead of only ever showing the last few — the panel is also resizable
+            // (deeper by default now) so there's more room before scrolling is even needed.
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let errorText = viewModel.errorBannerText {
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                Text(errorText)
+                                    .font(.system(size: 13, weight: .medium))
+                            }
+                        } else if viewModel.lines.isEmpty {
+                            Text("Слушаю…")
+                                .font(.system(size: 15, weight: .regular))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(viewModel.lines) { line in
+                                lineView(line).id(line.id)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            } else if viewModel.isPreparing {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Подготовка… при первом запуске загрузка языковой модели может занять до минуты")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(.secondary)
-                }
-            } else if viewModel.lines.isEmpty {
-                Text("Слушаю…")
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(viewModel.lines) { line in
-                    lineView(line)
+                .onChange(of: viewModel.lines) { _, lines in
+                    guard let lastId = lines.last?.id else { return }
+                    withAnimation { proxy.scrollTo(lastId, anchor: .bottom) }
                 }
             }
-            // Always-visible diagnostic: makes "zero events received" impossible to mistake for
-            // "events received but with empty text" without opening Console — requested after a
-            // report of empty-looking output that turned out ambiguous to diagnose remotely.
-            Text("событий получено: \(viewModel.eventCount)")
-                .font(.system(size: 9, weight: .regular))
-                .foregroundStyle(.tertiary)
+            .frame(maxHeight: .infinity)
+
+            // Pinned to the bottom (below the scrollable transcript) so it's always visible
+            // without scrolling — lets the user see *when* to start speaking/play audio instead
+            // of guessing (requested explicitly).
+            LevelMeterView(level: viewModel.audioLevel)
+                .frame(height: 18)
+                .padding(.top, 2)
         }
         .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
@@ -95,37 +96,41 @@ public struct OverlayView: View {
     }
 }
 
-/// A small equalizer-style live level meter: a row of bars whose heights react to the current
-/// captured-audio peak level, so it's visually obvious *when* speech/audio is actually reaching
-/// the app (as opposed to silence) — independent of whether recognition/translation have
-/// produced anything yet.
+/// A native SF Symbol waveform indicator, so it's visually obvious *when* speech/audio is
+/// actually reaching the app (as opposed to silence) — independent of whether
+/// recognition/translation have produced anything yet. Uses the system's own
+/// `.variableColor.iterative` symbol effect (the same style as Siri/dictation) rather than a
+/// custom-drawn bar meter, so it animates and looks native for free.
 private struct LevelMeterView: View {
+    /// Raw linear peak amplitude (0...1) from the capture source.
     let level: Float
 
-    /// Relative height multipliers per bar, purely cosmetic (no per-band frequency data is
-    /// available — this is amplitude only) so the meter doesn't look like one flat block.
-    private static let barMultipliers: [CGFloat] = [0.5, 0.85, 1.0, 0.7, 0.4]
+    /// Converts the linear peak to a perceptual (dB-based) 0...1 scale before deciding
+    /// activity/animation — human hearing (and speech loudness) is logarithmic, so quiet-but-
+    /// intelligible speech (the kind ASR/translation already handles fine) sits at a linear peak
+    /// as low as ~0.01–0.03, far under any reasonable *linear* threshold. Confirmed by manual
+    /// testing: the old linear threshold only reacted to noticeably loud speech, while text kept
+    /// translating normally for quiet speech the whole time.
+    private var perceivedLevel: Float {
+        guard level > 0.0001 else { return 0 }
+        let decibels = 20 * log10(level)
+        let floorDecibels: Float = -50
+        return min(max((decibels - floorDecibels) / -floorDecibels, 0), 1)
+    }
+
+    private var isActive: Bool { perceivedLevel > 0.08 }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 3) {
-            ForEach(Array(Self.barMultipliers.enumerated()), id: \.offset) { _, multiplier in
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(barColor)
-                    .frame(width: 4, height: barHeight(multiplier))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(.easeOut(duration: 0.08), value: level)
-    }
-
-    private func barHeight(_ multiplier: CGFloat) -> CGFloat {
-        let clampedLevel = CGFloat(max(0, min(1, level)))
-        let minHeight: CGFloat = 3
-        let maxHeight: CGFloat = 18
-        return minHeight + (maxHeight - minHeight) * clampedLevel * multiplier
-    }
-
-    private var barColor: Color {
-        level > 0.05 ? .green : .secondary.opacity(0.4)
+        Image(systemName: "waveform")
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .foregroundStyle(isActive ? Color.green : Color.secondary.opacity(0.5))
+            .symbolEffect(.variableColor.iterative, options: .repeating, isActive: isActive)
+            .scaleEffect(1 + CGFloat(perceivedLevel) * 0.2, anchor: .center)
+            .frame(maxWidth: .infinity)
+            .frame(height: 22)
+            .animation(.easeOut(duration: 0.15), value: isActive)
     }
 }
+
+

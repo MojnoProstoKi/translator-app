@@ -27,7 +27,6 @@ public final class AppCoordinator: ObservableObject {
     public init() {
         let controller = TranslationSessionController()
         self.sessionController = controller
-        self.overlayController = OverlayWindowController(viewModel: controller.overlayViewModel)
         self.consentReminder = ConsentReminderPresenter(overlayViewModel: controller.overlayViewModel)
 
         let sessionsDirectory = SessionsDirectoryPreference.stored()
@@ -35,6 +34,16 @@ public final class AppCoordinator: ObservableObject {
         let store = FileSessionTranscriptStore(baseDirectory: sessionsDirectory)
         self.sessionRecorder = SessionRecorder(store: store)
         self.sessionHistory = SessionHistoryViewModel(store: store, sessionsDirectory: sessionsDirectory)
+
+        // Captures the local `controller` (not `self`) — `self.overlayController` is exactly
+        // the property this expression is initializing, so it can't be part of a `self`-capturing
+        // closure yet. `controller.stop()` alone reproduces everything `AppCoordinator.stop()`
+        // does for the session (`onSessionEnded` already drives the recorder/history); the panel
+        // hides itself directly in `OverlayWindowController.windowShouldClose`.
+        self.overlayController = OverlayWindowController(
+            viewModel: controller.overlayViewModel,
+            onCloseRequested: { controller.stop() }
+        )
         self.sessionHistory.changeDirectoryAction = { [weak self] in self?.changeSessionsDirectory() }
 
         controller.onEvent = { [sessionRecorder] event in

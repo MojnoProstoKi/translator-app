@@ -28,18 +28,9 @@ public final class OverlayViewModel: ObservableObject {
     /// Transient consent-reminder banner text (FR-015). Set/cleared by
     /// `ConsentReminderPresenter`; `nil` when no reminder is currently shown.
     @Published public var consentBannerText: String?
-    /// Shown while the session is starting, before the first event or error arrives (asset
-    /// checks/downloads for Speech/Translation can take a few seconds) — requested explicitly
-    /// so the user isn't left guessing whether anything is happening.
-    @Published public var isPreparing: Bool = false
     /// A persistent (not auto-dismissing) error banner — e.g. "language pack not installed".
     /// Distinct from `consentBannerText`, which is informational and always auto-clears.
     @Published public var errorBannerText: String?
-    /// Total `TranslatedSegmentEvent`s received this session — shown as a small always-visible
-    /// counter so it's immediately obvious whether the pipeline is producing *anything* at all,
-    /// without needing Console/log inspection to tell "zero events" apart from "events with
-    /// empty text".
-    @Published public private(set) var eventCount: Int = 0
     /// Live captured-audio peak level (0...1), driven by `SystemAudioSource`/`MicrophoneSource`'s
     /// `onLevel` — powers the equalizer-style meter so the user can see *when* to speak/play
     /// audio instead of guessing (requested explicitly).
@@ -47,15 +38,15 @@ public final class OverlayViewModel: ObservableObject {
 
     private let maxVisibleLines: Int
 
-    public init(maxVisibleLines: Int = 4) {
+    /// 50 (not the old fixed-at-4 limit) now that `OverlayView`'s transcript scrolls — this is
+    /// just a sane bound on a single session's in-memory history, not a "visible at once" cap.
+    public init(maxVisibleLines: Int = 50) {
         self.maxVisibleLines = maxVisibleLines
     }
 
     /// Applies one pipeline event: updates the line for its segment if present, otherwise
     /// appends a new one, then trims to `maxVisibleLines` (oldest finalized lines drop first).
     public func apply(_ event: TranslatedSegmentEvent) {
-        isPreparing = false
-        eventCount += 1
         if let index = lines.firstIndex(where: { $0.id == event.segmentId }) {
             lines[index].originalText = event.originalText
             lines[index].translatedText = event.translatedText
@@ -77,15 +68,12 @@ public final class OverlayViewModel: ObservableObject {
     }
 
     public func reportError(_ message: String) {
-        isPreparing = false
         errorBannerText = message
     }
 
     public func reset() {
         lines.removeAll()
         errorBannerText = nil
-        isPreparing = true
-        eventCount = 0
         audioLevel = 0
     }
 }

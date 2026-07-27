@@ -52,10 +52,18 @@ public final class FileSessionTranscriptStore: SessionTranscriptStore, @unchecke
         let files = try fileManager.contentsOfDirectory(at: baseDirectory, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }
 
-        return try files.map { url in
-            let data = try Data(contentsOf: url)
-            let transcript = try decoder.decode(SessionTranscript.self, from: data)
-            return SessionTranscriptSummary(transcript: transcript)
+        // A file that fails to decode (e.g. saved by an older build under a since-changed
+        // `SessionTranscript` schema) is skipped rather than failing the whole list — one stale
+        // file shouldn't make every other session inaccessible.
+        return files.compactMap { url -> SessionTranscriptSummary? in
+            do {
+                let data = try Data(contentsOf: url)
+                let transcript = try decoder.decode(SessionTranscript.self, from: data)
+                return SessionTranscriptSummary(transcript: transcript)
+            } catch {
+                EngineLog.error("FileSessionTranscriptStore: skipping unreadable session file \(url.lastPathComponent): \(error)")
+                return nil
+            }
         }
         .sorted { $0.startedAt < $1.startedAt }
     }
