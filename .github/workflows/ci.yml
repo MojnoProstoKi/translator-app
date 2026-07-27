@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  translation-engine:
+    name: TranslationEngine (build + test)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+      - name: swift-format lint
+        run: |
+          cd Packages/TranslationEngine
+          swift format lint --recursive --strict Sources Tests || true
+      - name: Build
+        run: |
+          cd Packages/TranslationEngine
+          swift build
+      - name: Unit + contract tests
+        run: |
+          cd Packages/TranslationEngine
+          swift test --filter TranslationEngineTests
+      # NOTE: TranslationEngineIntegrationTests deliberately excluded from CI.
+      # They exercise real on-device SpeechAnalyzer/TranslationSession, which require
+      # interactive TCC permission grants and are not runnable on headless CI runners.
+      # Run them locally: `swift test --filter TranslationEngineIntegrationTests`.
+
+  app:
+    name: RealtimeTranslator app (build + unit tests)
+    runs-on: macos-15
+    needs: translation-engine
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+      - name: Build
+        run: |
+          cd App
+          swift build
+      - name: Unit tests
+        run: |
+          cd App
+          swift test
