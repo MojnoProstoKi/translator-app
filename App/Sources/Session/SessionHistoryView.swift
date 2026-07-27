@@ -41,6 +41,20 @@ public struct SessionHistoryView: View {
                     }
                 }
             }
+
+            Divider()
+            HStack {
+                Text(viewModel.sessionsDirectory.path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Button("Изменить папку…") {
+                    viewModel.changeDirectory()
+                }
+            }
+            .padding([.horizontal, .bottom])
         }
         .frame(minWidth: 360, minHeight: 240)
         .onAppear { viewModel.refresh() }

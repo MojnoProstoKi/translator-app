@@ -7,11 +7,30 @@ import TranslationEngine
 public final class SessionHistoryViewModel: ObservableObject {
     @Published public private(set) var summaries: [SessionTranscriptSummary] = []
     @Published public private(set) var lastError: String?
+    @Published public private(set) var sessionsDirectory: URL
 
-    private let store: SessionTranscriptStore
+    private var store: SessionTranscriptStore
 
-    public init(store: SessionTranscriptStore) {
+    /// Set by `AppCoordinator` to present the folder picker; kept as a closure rather than an
+    /// AppKit dependency here since this view model otherwise only imports Foundation.
+    public var changeDirectoryAction: (() -> Void)?
+
+    public init(store: SessionTranscriptStore, sessionsDirectory: URL) {
         self.store = store
+        self.sessionsDirectory = sessionsDirectory
+    }
+
+    public func changeDirectory() {
+        changeDirectoryAction?()
+    }
+
+    /// Switches to a newly chosen sessions folder. Past sessions saved under the previous folder
+    /// are left untouched — they simply no longer appear here, since this list always reflects
+    /// whatever the current folder contains.
+    public func updateStore(_ store: SessionTranscriptStore, sessionsDirectory: URL) {
+        self.store = store
+        self.sessionsDirectory = sessionsDirectory
+        refresh()
     }
 
     public func refresh() {

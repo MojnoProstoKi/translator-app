@@ -41,7 +41,7 @@ final class SessionHistoryTests: XCTestCase {
         _ = try save(sourceType: .systemAudio)
         _ = try save(sourceType: .microphone)
 
-        let viewModel = SessionHistoryViewModel(store: store)
+        let viewModel = SessionHistoryViewModel(store: store, sessionsDirectory: tempDirectory)
         viewModel.refresh()
 
         XCTAssertEqual(viewModel.summaries.count, 2)
@@ -52,7 +52,7 @@ final class SessionHistoryTests: XCTestCase {
         let keep = try save(sourceType: .systemAudio)
         let remove = try save(sourceType: .microphone)
 
-        let viewModel = SessionHistoryViewModel(store: store)
+        let viewModel = SessionHistoryViewModel(store: store, sessionsDirectory: tempDirectory)
         viewModel.refresh()
         XCTAssertEqual(viewModel.summaries.count, 2)
 

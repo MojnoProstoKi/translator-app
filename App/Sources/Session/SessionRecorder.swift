@@ -7,10 +7,16 @@ import TranslationEngine
 /// (FR-011), matching `SessionTranscript`'s precondition.
 @MainActor
 public final class SessionRecorder {
-    private let store: SessionTranscriptStore
+    private var store: SessionTranscriptStore
     private var session: TranslationSession?
 
     public init(store: SessionTranscriptStore) {
+        self.store = store
+    }
+
+    /// Points future `endSession()` saves at a different store (e.g. the user picked a new
+    /// sessions folder) without affecting the in-progress session, if any.
+    public func updateStore(_ store: SessionTranscriptStore) {
         self.store = store
     }
 

@@ -16,6 +16,27 @@ swift run RealtimeTranslator
 При первом запуске появится напоминание о согласии собеседника (FR-015) и, при старте сессии,
 системные запросы разрешений на микрофон / системный звук (FR-010).
 
+## Упаковка `.app` для запуска на другом компьютере
+
+```bash
+./Scripts/build-app.sh
+```
+
+Собирает release-бинарь, упаковывает его в `.build/RealtimeTranslator.app` (с `Resources/Info.plist`,
+ad-hoc подписью) и кладёт `.build/RealtimeTranslator.zip` — этот архив можно переносить на другой Mac
+(Apple Silicon, macOS 26+). Скрипт печатает инструкции по первому запуску на целевой машине
+(снятие карантина Gatekeeper при передаче через AirDrop/почту/браузер, ручная выдача разрешения
+System Audio Recording Only — см. [`quickstart.md`](../specs/001-realtime-speech-translation/quickstart.md)).
+
+Или сразу собрать `.dmg`-инсталлятор (drag-and-drop в Applications):
+
+```bash
+./Scripts/build-dmg.sh
+```
+
+Собирает `.app` (вызывая `build-app.sh`) и кладёт `.build/RealtimeTranslator.dmg` — при открытии
+показывает иконку приложения рядом с ярлыком `Applications`, перетащить одно на другое для установки.
+
 ## Тесты
 
 ```bash

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import Translation
 import TranslationEngine
 
 private let bundleIdentifier = "com.translator.RealtimeTranslator"
@@ -18,6 +19,7 @@ public final class AppCoordinator: ObservableObject {
     private let consentReminder: ConsentReminderPresenter
     private let sessionRecorder: SessionRecorder
     private var historyWindowController: SessionHistoryWindowController?
+    private var translationPreparationWindow: TranslationPreparationWindowController?
     private var cancellables: Set<AnyCancellable> = []
 
     @Published public private(set) var lastError: String?
@@ -28,11 +30,12 @@ public final class AppCoordinator: ObservableObject {
         self.overlayController = OverlayWindowController(viewModel: controller.overlayViewModel)
         self.consentReminder = ConsentReminderPresenter(overlayViewModel: controller.overlayViewModel)
 
-        let store = FileSessionTranscriptStore(
-            baseDirectory: FileSessionTranscriptStore.defaultBaseDirectory(bundleIdentifier: bundleIdentifier)
-        )
+        let sessionsDirectory = SessionsDirectoryPreference.stored()
+            ?? FileSessionTranscriptStore.defaultBaseDirectory(bundleIdentifier: bundleIdentifier)
+        let store = FileSessionTranscriptStore(baseDirectory: sessionsDirectory)
         self.sessionRecorder = SessionRecorder(store: store)
-        self.sessionHistory = SessionHistoryViewModel(store: store)
+        self.sessionHistory = SessionHistoryViewModel(store: store, sessionsDirectory: sessionsDirectory)
+        self.sessionHistory.changeDirectoryAction = { [weak self] in self?.changeSessionsDirectory() }
 
         controller.onEvent = { [sessionRecorder] event in
             sessionRecorder.apply(event)
@@ -87,6 +90,8 @@ public final class AppCoordinator: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
 
         Task {
+            await prepareTranslationAssetsIfNeeded()
+
             // FR-010: verify (and, if needed, actively (re-)request) every source's permission
             // before starting — never silently attempt capture that's going to be denied.
             for sourceType in sources {
@@ -112,6 +117,30 @@ public final class AppCoordinator: ObservableObject {
         }
     }
 
+    /// Ensures the on-device en→ru translation model is installed before a session starts,
+    /// showing `TranslationPreparationWindowController`'s window (the only way to trigger Apple's
+    /// system download-consent UI) if it isn't. Without this, the first-ever translation attempt
+    /// used to fail outright with `LanguagePackNotInstalledError`, forcing a manual trip through
+    /// the system Translate app — confirmed by manual testing. A no-op once the pack is installed.
+    private func prepareTranslationAssetsIfNeeded() async {
+        let source = Locale.Language(languageCode: .english)
+        let target = Locale.Language(languageCode: .russian)
+        let status = await LanguageAvailability().status(from: source, to: target)
+        guard status == .supported else { return }
+
+        NSApp.activate(ignoringOtherApps: true)
+        await withCheckedContinuation { continuation in
+            let controller = TranslationPreparationWindowController(source: source, target: target) {
+                continuation.resume()
+            }
+            translationPreparationWindow = controller
+            controller.showWindow(nil)
+            controller.window?.makeKeyAndOrderFront(nil)
+        }
+        translationPreparationWindow?.close()
+        translationPreparationWindow = nil
+    }
+
     public func stop() {
         sessionController.stop()
         overlayController.hide()
@@ -121,5 +150,24 @@ public final class AppCoordinator: ObservableObject {
         let controller = historyWindowController ?? SessionHistoryWindowController(viewModel: sessionHistory)
         historyWindowController = controller
         controller.show()
+    }
+
+    /// Lets the user redirect where future session transcripts are saved (FR-012). Past
+    /// transcripts under the previous folder are left in place — they simply stop showing up in
+    /// history, since history always reflects the currently selected folder's contents.
+    private func changeSessionsDirectory() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Выбрать"
+        panel.message = "Выберите папку для сохранения переводов сессий"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        SessionsDirectoryPreference.save(url)
+        let store = FileSessionTranscriptStore(baseDirectory: url)
+        sessionRecorder.updateStore(store)
+        sessionHistory.updateStore(store, sessionsDirectory: url)
     }
 }
