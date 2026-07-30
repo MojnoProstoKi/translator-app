@@ -37,6 +37,23 @@ System Audio Recording Only — см. [`quickstart.md`](../specs/001-realtime-sp
 Собирает `.app` (вызывая `build-app.sh`) и кладёт `.build/RealtimeTranslator.dmg` — при открытии
 показывает иконку приложения рядом с ярлыком `Applications`, перетащить одно на другое для установки.
 
+### «The application "RealtimeTranslator" can't be opened» на другом Mac
+
+Приложение подписано только ad-hoc (без Developer ID) и не нотаризовано, поэтому если `.dmg`/`.zip`
+попал на целевой Mac через AirDrop, почту, мессенджер или облако — macOS проставляет файлу флаг
+карантина, и Gatekeeper отказывается его открывать. Подтверждённое решение на целевом Mac:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/RealtimeTranslator.app
+```
+
+После этого приложение запускается обычным двойным кликом. Затем не забыть заново выдать
+System Settings → Privacy & Security → System Audio Recording Only → RealtimeTranslator (разрешения
+TCC не переносятся между машинами и не привязываются к копии бандла).
+
+Если переносить `.app` копированием по SSH (`scp`/`rsync`) или через флешку, а не через
+AirDrop/облако/браузер — флаг карантина не ставится вообще, и `xattr` не понадобится.
+
 ## Тесты
 
 ```bash

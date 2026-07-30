@@ -20,6 +20,7 @@ public final class AppCoordinator: ObservableObject {
     private let sessionRecorder: SessionRecorder
     private var historyWindowController: SessionHistoryWindowController?
     private var translationPreparationWindow: TranslationPreparationWindowController?
+    private var permissionGuidanceWindow: PermissionGuidanceWindowController?
     private var cancellables: Set<AnyCancellable> = []
 
     @Published public private(set) var lastError: String?
@@ -109,7 +110,9 @@ public final class AppCoordinator: ObservableObject {
                     state = await permissionsManager.requestPermission(for: sourceType)
                 }
                 guard state == .granted else {
-                    lastError = permissionsManager.deniedGuidance(for: sourceType)
+                    let guidance = permissionsManager.deniedGuidance(for: sourceType)
+                    lastError = guidance
+                    presentPermissionGuidance(sourceType: sourceType, guidance: guidance)
                     return
                 }
             }
@@ -148,6 +151,16 @@ public final class AppCoordinator: ObservableObject {
         }
         translationPreparationWindow?.close()
         translationPreparationWindow = nil
+    }
+
+    /// FR-010: a denied permission never re-prompts on its own, so point the user straight at
+    /// the exact System Settings pane instead of leaving them to find it from the text hint alone.
+    private func presentPermissionGuidance(sourceType: AudioSourceType, guidance: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let controller = PermissionGuidanceWindowController(sourceType: sourceType, guidance: guidance)
+        permissionGuidanceWindow = controller
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
     }
 
     public func stop() {
