@@ -24,6 +24,17 @@ public final class SessionRecorder {
         session = TranslationSession(startedAt: Date(), audioSources: sources)
     }
 
+    /// The active session's start time, if any — lets callers suggest a default name
+    /// (`SessionTranscript.defaultTitle(startedAt:)`) before the session is finalized/saved.
+    public var activeSessionStartedAt: Date? { session?.startedAt }
+
+    /// Whether the active session has anything worth naming and saving — mirrors the
+    /// finalized-only filter `endSession()` applies, so callers can skip prompting for a name
+    /// when there's nothing to persist (e.g. a session stopped before any speech finalized).
+    public var hasFinalizedSegments: Bool {
+        session?.segments.contains { $0.state == .finalized } ?? false
+    }
+
     public func apply(_ event: TranslatedSegmentEvent) {
         guard var session else { return }
         if let index = session.segments.firstIndex(where: { $0.id == event.segmentId }) {
@@ -45,7 +56,7 @@ public final class SessionRecorder {
     /// (FR-012). Segments that never reached `.finalized` (e.g. an utterance cut off mid-stream
     /// by a hard stop) are dropped, per `SessionTranscript`'s finalized-only precondition.
     @discardableResult
-    public func endSession() throws -> SessionTranscript? {
+    public func endSession(title: String) throws -> SessionTranscript? {
         guard var session else { return nil }
         session.status = .stopped
         session.endedAt = Date()
@@ -53,7 +64,7 @@ public final class SessionRecorder {
         self.session = nil
 
         guard !session.segments.isEmpty else { return nil }
-        let transcript = SessionTranscript(session: session)
+        let transcript = SessionTranscript(session: session, title: title)
         try store.save(transcript)
         return transcript
     }

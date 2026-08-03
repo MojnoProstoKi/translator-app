@@ -24,10 +24,12 @@ public struct SessionHistoryView: View {
                     ForEach(viewModel.summaries) { summary in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(summary.startedAt.formatted(date: .abbreviated, time: .shortened))
-                                Text(sourcesLabel(summary.sourceTypes))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                Text(summary.title)
+                                Text(
+                                    "\(summary.startedAt.formatted(date: .abbreviated, time: .shortened)) · \(sourcesLabel(summary.sourceTypes))"
+                                )
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                             }
                             Spacer()
                             // Single tap = 1 action, well within SC-006's 2-action budget.

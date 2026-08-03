@@ -32,7 +32,7 @@ final class SessionHistoryTests: XCTestCase {
         session.segments = [segment]
         session.status = .stopped
         session.endedAt = Date()
-        let transcript = SessionTranscript(session: session)
+        let transcript = SessionTranscript(session: session, title: "Test session")
         try store.save(transcript)
         return transcript.sessionId
     }

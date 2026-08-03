@@ -107,8 +107,9 @@ public struct SessionTranscript: Codable, Sendable {
     public let endedAt: Date?
     public let audioSources: Set<AudioSourceType>
     public let finalizedSegments: [TranscriptSegment]
+    public let title: String
 
-    public init(session: TranslationSession) {
+    public init(session: TranslationSession, title: String) {
         precondition(
             session.segments.allSatisfy { $0.state == .finalized },
             "SessionTranscript MUST only contain finalized segments"
@@ -120,6 +121,27 @@ public struct SessionTranscript: Codable, Sendable {
         self.finalizedSegments = session.segments.map {
             TranscriptSegment(id: $0.id, originalText: $0.recognizedText, translatedText: $0.translation.text)
         }
+        self.title = title
+    }
+
+    /// The name suggested when saving a session, and the fallback used when reading back a
+    /// session saved before this field existed (no `title` key in its JSON).
+    public static func defaultTitle(startedAt: Date) -> String {
+        startedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionId, startedAt, endedAt, audioSources, finalizedSegments, title
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionId = try container.decode(UUID.self, forKey: .sessionId)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        endedAt = try container.decodeIfPresent(Date.self, forKey: .endedAt)
+        audioSources = try container.decode(Set<AudioSourceType>.self, forKey: .audioSources)
+        finalizedSegments = try container.decode([TranscriptSegment].self, forKey: .finalizedSegments)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? Self.defaultTitle(startedAt: startedAt)
     }
 }
 
@@ -131,12 +153,14 @@ public struct SessionTranscriptSummary: Codable, Sendable, Identifiable {
     public let startedAt: Date
     public let endedAt: Date?
     public let sourceTypes: Set<AudioSourceType>
+    public let title: String
 
-    public init(sessionId: UUID, startedAt: Date, endedAt: Date?, sourceTypes: Set<AudioSourceType>) {
+    public init(sessionId: UUID, startedAt: Date, endedAt: Date?, sourceTypes: Set<AudioSourceType>, title: String) {
         self.sessionId = sessionId
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.sourceTypes = sourceTypes
+        self.title = title
     }
 
     public init(transcript: SessionTranscript) {
@@ -144,7 +168,8 @@ public struct SessionTranscriptSummary: Codable, Sendable, Identifiable {
             sessionId: transcript.sessionId,
             startedAt: transcript.startedAt,
             endedAt: transcript.endedAt,
-            sourceTypes: transcript.audioSources
+            sourceTypes: transcript.audioSources,
+            title: transcript.title
         )
     }
 }

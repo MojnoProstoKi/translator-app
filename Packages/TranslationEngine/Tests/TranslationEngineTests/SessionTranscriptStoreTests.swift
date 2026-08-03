@@ -27,7 +27,7 @@ final class SessionTranscriptStoreTests: XCTestCase {
         session.segments = [segment]
         session.status = .stopped
         session.endedAt = Date()
-        return SessionTranscript(session: session)
+        return SessionTranscript(session: session, title: "Test session")
     }
 
     func testSaveThenListReturnsSummary() throws {

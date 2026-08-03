@@ -21,6 +21,9 @@ public final class AppCoordinator: ObservableObject {
     private var historyWindowController: SessionHistoryWindowController?
     private var translationPreparationWindow: TranslationPreparationWindowController?
     private var permissionGuidanceWindow: PermissionGuidanceWindowController?
+    private var sessionNamingWindow: SessionNamingWindowController?
+    private let callAppMonitor = CallAppMonitor()
+    private let callReminderNotifier = CallReminderNotifier()
     private var cancellables: Set<AnyCancellable> = []
 
     @Published public private(set) var lastError: String?
@@ -50,12 +53,23 @@ public final class AppCoordinator: ObservableObject {
         controller.onEvent = { [sessionRecorder] event in
             sessionRecorder.apply(event)
         }
-        controller.onSessionEnded = { [sessionRecorder, sessionHistory] in
-            _ = try? sessionRecorder.endSession()
-            sessionHistory.refresh()
+        controller.onSessionEnded = { [weak self] in
+            self?.finishSession()
         }
 
         consentReminder.remindAtFirstLaunchIfNeeded()
+
+        // Notices when a call/meeting app (Zoom, Teams, FaceTime, …) launches and offers to turn
+        // on translation, so the user doesn't have to remember to open the menu themselves.
+        // Skipped while a session is already running — nothing useful to suggest at that point.
+        callAppMonitor.onCallAppDetected = { [weak self] appName in
+            guard let self, !self.sessionController.isRunning else { return }
+            self.callReminderNotifier.notifyCallAppDetected(appName: appName)
+        }
+        callReminderNotifier.onStartTranslationRequested = { [weak self] in
+            Task { @MainActor in self?.startSystemAudio() }
+        }
+        callAppMonitor.start()
 
         // `sessionController` is a nested ObservableObject: SwiftUI only re-renders views that
         // directly observe an object whose *own* objectWillChange fires. Without this, MenuBarExtra
@@ -80,6 +94,7 @@ public final class AppCoordinator: ObservableObject {
                 _ = await permissionsManager.requestPermission(for: sourceType)
             }
         }
+        await callReminderNotifier.requestAuthorizationIfNeeded()
     }
 
     public func startSystemAudio() {
@@ -151,6 +166,30 @@ public final class AppCoordinator: ObservableObject {
         }
         translationPreparationWindow?.close()
         translationPreparationWindow = nil
+    }
+
+    /// Prompts for a name before persisting the session that just ended (FR-012), pre-filled
+    /// with a sensible default so naming stays optional in practice — confirming immediately
+    /// keeps that default. Skipped entirely (same as before this feature existed) when there's
+    /// nothing to save, matching `endSession(title:)`'s own finalized-only precondition.
+    private func finishSession() {
+        guard sessionRecorder.hasFinalizedSegments, let startedAt = sessionRecorder.activeSessionStartedAt else {
+            _ = try? sessionRecorder.endSession(title: "")
+            return
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        let controller = SessionNamingWindowController(
+            defaultTitle: SessionTranscript.defaultTitle(startedAt: startedAt)
+        ) { [weak self] title in
+            guard let self else { return }
+            _ = try? self.sessionRecorder.endSession(title: title)
+            self.sessionHistory.refresh()
+            self.sessionNamingWindow = nil
+        }
+        sessionNamingWindow = controller
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
     }
 
     /// FR-010: a denied permission never re-prompts on its own, so point the user straight at
