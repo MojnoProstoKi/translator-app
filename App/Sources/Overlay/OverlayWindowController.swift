@@ -24,7 +24,10 @@ public final class OverlayWindowController: NSWindowController, NSWindowDelegate
         // `.screenSaver` places the panel above full-screen apps and Spaces switches, so a
         // full-screen Zoom/Teams call or video doesn't hide it (FR-009).
         panel.level = .screenSaver
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        // No `.stationary`: that behavior pins the panel to the space/screen it was created on,
+        // which is what made dragging it to a second display minimize/vanish it instead of
+        // actually moving there.
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true

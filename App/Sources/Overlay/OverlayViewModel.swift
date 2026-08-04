@@ -25,6 +25,9 @@ public final class OverlayViewModel: ObservableObject {
     /// Whether more than one audio source is active — the view shows a source label per line
     /// only when this is true (US2: FR-007 concurrent sources shouldn't be visually mixed up).
     @Published public var showsSourceLabels: Bool = false
+    /// Which language pair the current session is using — lets `OverlayView` label the
+    /// recognized/translated lines correctly regardless of direction.
+    @Published public var direction: TranslationDirection = .englishToRussian
     /// Transient consent-reminder banner text (FR-015). Set/cleared by
     /// `ConsentReminderPresenter`; `nil` when no reminder is currently shown.
     @Published public var consentBannerText: String?
@@ -47,6 +50,11 @@ public final class OverlayViewModel: ObservableObject {
     /// Applies one pipeline event: updates the line for its segment if present, otherwise
     /// appends a new one, then trims to `maxVisibleLines` (oldest finalized lines drop first).
     public func apply(_ event: TranslatedSegmentEvent) {
+        // A prior segment's failure (`reportError`) must not permanently hide the transcript once
+        // translation recovers — any event reaching here proves it has (confirmed by manual
+        // testing: without this, the overlay got stuck on a stale error even though translation
+        // was working again for every segment after the one that failed).
+        errorBannerText = nil
         if let index = lines.firstIndex(where: { $0.id == event.segmentId }) {
             lines[index].originalText = event.originalText
             lines[index].translatedText = event.translatedText

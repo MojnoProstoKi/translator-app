@@ -10,6 +10,8 @@
 	<string>com.translator.RealtimeTranslator</string>
 	<key>CFBundleExecutable</key>
 	<string>RealtimeTranslator</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -23,6 +25,6 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>RealtimeTranslator использует микрофон, чтобы распознавать и переводить речь собеседника в реальном времени.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>RealtimeTranslator использует распознавание речи на устройстве, чтобы переводить услышанную английскую речь на русский язык.</string>
+	<string>RealtimeTranslator использует распознавание речи на устройстве, чтобы переводить услышанную речь (английскую или русскую, в зависимости от выбранного направления) на другой язык.</string>
 </dict>
 </plist>

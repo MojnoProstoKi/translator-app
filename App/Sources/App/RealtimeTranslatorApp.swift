@@ -14,6 +14,22 @@ struct RealtimeTranslatorApp: App {
                     coordinator.stop()
                 }
             } else {
+                // Fixed for a session's lifetime (TranslationSessionController.setDirection is a
+                // no-op while running), so the picker only makes sense to show before starting.
+                Menu("Направление: \(coordinator.sessionController.direction.menuTitle)") {
+                    ForEach(TranslationDirection.allCases, id: \.self) { direction in
+                        Button {
+                            coordinator.sessionController.setDirection(direction)
+                        } label: {
+                            if direction == coordinator.sessionController.direction {
+                                Label(direction.menuTitle, systemImage: "checkmark")
+                            } else {
+                                Text(direction.menuTitle)
+                            }
+                        }
+                    }
+                }
+                Divider()
                 Button("Слушать системный звук (звонок/видео)") {
                     coordinator.startSystemAudio()
                 }

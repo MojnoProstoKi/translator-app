@@ -11,6 +11,10 @@ public final class TranslationSessionController: ObservableObject {
     /// Set when a source disappears mid-session (call ended, device disconnected — FR-014)
     /// rather than the user explicitly pressing stop. `nil` otherwise.
     @Published public private(set) var sourceLostMessage: String?
+    /// Which language pair the next session will use. Fixed once a session is running — changing
+    /// the ASR locale or translation language pack mid-stream isn't supported by either
+    /// underlying provider.
+    @Published public private(set) var direction: TranslationDirection = .englishToRussian
 
     public let overlayViewModel: OverlayViewModel
 
@@ -28,6 +32,12 @@ public final class TranslationSessionController: ObservableObject {
 
     public init(overlayViewModel: OverlayViewModel = OverlayViewModel()) {
         self.overlayViewModel = overlayViewModel
+    }
+
+    /// Picks the language pair for the next session (no-op while a session is already running).
+    public func setDirection(_ direction: TranslationDirection) {
+        guard !isRunning else { return }
+        self.direction = direction
     }
 
     /// Starts a session listening to system audio only (User Story 1's independent test).
@@ -75,6 +85,7 @@ public final class TranslationSessionController: ObservableObject {
         )
         self.pipeline = pipeline
         overlayViewModel.reset()
+        overlayViewModel.direction = direction
         overlayViewModel.showsSourceLabels = sourceTypes.count > 1
         sourceLostMessage = nil
         stoppedByUser = false
@@ -90,6 +101,13 @@ public final class TranslationSessionController: ObservableObject {
 
         eventTask = Task { [weak self] in
             for await event in stream {
+                // Speech recognition is locked to English (`SpeechAnalyzerASRProvider`); when the
+                // interlocutor speaks a different language, its best-effort transcription is
+                // often just punctuation with no actual letters, and translating that yields more
+                // of the same — a stray "." in the overlay/history with nothing meaningful behind
+                // it (confirmed by manual testing). Skipping it here also keeps it out of the
+                // saved session transcript, not just the overlay.
+                guard event.originalText.rangeOfCharacter(from: .letters) != nil else { continue }
                 self?.overlayViewModel.apply(event)
                 self?.onEvent?(event)
             }
@@ -125,14 +143,19 @@ public final class TranslationSessionController: ObservableObject {
 
     private func makeASRProvider() -> ASRProvider {
         if #available(macOS 26.0, *) {
-            return SpeechAnalyzerASRProvider()
+            return SpeechAnalyzerASRProvider(locale: direction.speechLocale)
         }
         fatalError("RealtimeTranslator requires macOS 26 or later")
     }
 
+    // Wrapped in `GlossaryTranslationProvider` (English→Russian only — see
+    // `TranslationDirection.appliesGlossary`) so common IT jargon (pull request, backend,
+    // deploy, …) comes through as what a Russian-speaking developer would actually say instead
+    // of Apple's more literal/formal translation.
     private func makeTranslationProvider() -> TranslationProvider {
         if #available(macOS 26.0, *) {
-            return AppleTranslationProvider()
+            let apple = AppleTranslationProvider(source: direction.sourceLanguage, target: direction.targetLanguage)
+            return direction.appliesGlossary ? GlossaryTranslationProvider(wrapping: apple) : apple
         }
         fatalError("RealtimeTranslator requires macOS 26 or later")
     }

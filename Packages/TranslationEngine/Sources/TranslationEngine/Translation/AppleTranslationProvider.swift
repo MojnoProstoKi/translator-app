@@ -44,8 +44,19 @@ public final class AppleTranslationProvider: TranslationProvider, @unchecked Sen
 
     public func translate(_ text: String, isFinal: Bool) async throws -> String {
         let session = try await resolvedSession()
-        let response = try await session.translate(text)
-        return response.targetText
+        do {
+            let response = try await session.translate(text)
+            return response.targetText
+        } catch {
+            // A single failed `translate()` call (e.g. unexpected/garbage input from a language
+            // the ASR wasn't expecting) has been observed to leave this `Translation.TranslationSession`
+            // unusable for every subsequent call, even on perfectly ordinary English text
+            // afterwards. Drop the cached session so the next call builds a fresh one instead of
+            // being stuck reusing a poisoned one — this segment still fails/reports an error, but
+            // translation recovers for the ones after it.
+            lock.withLock { cachedSession = nil }
+            throw error
+        }
     }
 
     private func resolvedSession() async throws -> Translation.TranslationSession {

@@ -6,9 +6,13 @@ import SwiftUI
 /// default; no separate "skip" path is needed.
 @MainActor
 public final class SessionNamingWindowController: NSWindowController {
-    public convenience init(defaultTitle: String, onSave: @escaping (String) -> Void) {
+    public convenience init(
+        defaultTitle: String,
+        onSave: @escaping (String) -> Void,
+        onDiscard: @escaping () -> Void
+    ) {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 140),
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 150),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
@@ -18,10 +22,17 @@ public final class SessionNamingWindowController: NSWindowController {
         window.center()
         self.init(window: window)
         window.contentView = NSHostingView(
-            rootView: SessionNamingView(defaultTitle: defaultTitle) { [weak window] title in
-                onSave(title)
-                window?.close()
-            }
+            rootView: SessionNamingView(
+                defaultTitle: defaultTitle,
+                onSave: { [weak window] title in
+                    onSave(title)
+                    window?.close()
+                },
+                onDiscard: { [weak window] in
+                    onDiscard()
+                    window?.close()
+                }
+            )
         )
         window.makeFirstResponder(window.contentView)
     }
@@ -30,13 +41,15 @@ public final class SessionNamingWindowController: NSWindowController {
 private struct SessionNamingView: View {
     let defaultTitle: String
     let onSave: (String) -> Void
+    let onDiscard: () -> Void
 
     @State private var title: String
     @FocusState private var isTitleFocused: Bool
 
-    init(defaultTitle: String, onSave: @escaping (String) -> Void) {
+    init(defaultTitle: String, onSave: @escaping (String) -> Void, onDiscard: @escaping () -> Void) {
         self.defaultTitle = defaultTitle
         self.onSave = onSave
+        self.onDiscard = onDiscard
         _title = State(initialValue: defaultTitle)
     }
 
@@ -48,11 +61,15 @@ private struct SessionNamingView: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($isTitleFocused)
                 .onSubmit(save)
-            Button("Сохранить", action: save)
-                .keyboardShortcut(.defaultAction)
+            HStack {
+                Button("Не сохранять", role: .destructive, action: onDiscard)
+                Spacer()
+                Button("Сохранить", action: save)
+                    .keyboardShortcut(.defaultAction)
+            }
         }
         .padding(24)
-        .frame(width: 360, height: 140)
+        .frame(width: 360, height: 150)
         .onAppear { isTitleFocused = true }
     }
 

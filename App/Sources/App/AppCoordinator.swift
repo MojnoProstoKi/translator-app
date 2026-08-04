@@ -140,18 +140,33 @@ public final class AppCoordinator: ObservableObject {
                 lastError = nil
             } catch {
                 lastError = "\(error)"
+                // Without this, a session-start failure was only ever visible as menu text —
+                // easy to miss entirely on an LSUIElement app with no window open by default.
+                presentErrorAlert("Не удалось запустить перевод", details: "\(error)")
             }
         }
     }
 
-    /// Ensures the on-device en→ru translation model is installed before a session starts,
-    /// showing `TranslationPreparationWindowController`'s window (the only way to trigger Apple's
-    /// system download-consent UI) if it isn't. Without this, the first-ever translation attempt
-    /// used to fail outright with `LanguagePackNotInstalledError`, forcing a manual trip through
-    /// the system Translate app — confirmed by manual testing. A no-op once the pack is installed.
+    private func presentErrorAlert(_ message: String, details: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = message
+        alert.informativeText = details
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    /// Ensures the on-device translation model for the currently selected `TranslationDirection`
+    /// is installed before a session starts, showing `TranslationPreparationWindowController`'s
+    /// window (the only way to trigger Apple's system download-consent UI) if it isn't. Without
+    /// this, the first-ever translation attempt used to fail outright with
+    /// `LanguagePackNotInstalledError`, forcing a manual trip through the system Translate app —
+    /// confirmed by manual testing. A no-op once the pack is installed.
     private func prepareTranslationAssetsIfNeeded() async {
-        let source = Locale.Language(languageCode: .english)
-        let target = Locale.Language(languageCode: .russian)
+        let direction = sessionController.direction
+        let source = direction.sourceLanguage
+        let target = direction.targetLanguage
         let status = await LanguageAvailability().status(from: source, to: target)
         guard status == .supported else { return }
 
@@ -180,13 +195,18 @@ public final class AppCoordinator: ObservableObject {
 
         NSApp.activate(ignoringOtherApps: true)
         let controller = SessionNamingWindowController(
-            defaultTitle: SessionTranscript.defaultTitle(startedAt: startedAt)
-        ) { [weak self] title in
-            guard let self else { return }
-            _ = try? self.sessionRecorder.endSession(title: title)
-            self.sessionHistory.refresh()
-            self.sessionNamingWindow = nil
-        }
+            defaultTitle: SessionTranscript.defaultTitle(startedAt: startedAt),
+            onSave: { [weak self] title in
+                guard let self else { return }
+                _ = try? self.sessionRecorder.endSession(title: title)
+                self.sessionHistory.refresh()
+                self.sessionNamingWindow = nil
+            },
+            onDiscard: { [weak self] in
+                self?.sessionRecorder.discardSession()
+                self?.sessionNamingWindow = nil
+            }
+        )
         sessionNamingWindow = controller
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)

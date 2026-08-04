@@ -77,11 +77,11 @@ public struct OverlayView: View {
             // glance whether recognition or translation is the one not working. Placeholders
             // are spelled out (not "…") so a screenshot unambiguously shows "empty" rather than
             // something that could be misread as literal punctuation in the recognized text.
-            Text(line.originalText.isEmpty ? "[EN: пусто]" : line.originalText)
+            Text(line.originalText.isEmpty ? "[\(viewModel.direction.originalLanguageLabel): пусто]" : line.originalText)
                 .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(.secondary)
                 .italic(!line.isFinal)
-            Text(line.translatedText.isEmpty ? "[RU: пусто]" : line.translatedText)
+            Text(line.translatedText.isEmpty ? "[\(viewModel.direction.translatedLanguageLabel): пусто]" : line.translatedText)
                 .font(.system(size: 16, weight: line.isFinal ? .semibold : .regular))
                 .foregroundStyle(line.isFinal ? .primary : .secondary)
                 .italic(!line.isFinal)

@@ -52,6 +52,12 @@ public final class SessionRecorder {
         self.session = session
     }
 
+    /// Drops the current session without persisting anything — used when the user declines to
+    /// save a just-ended session from the naming prompt (FR-012).
+    public func discardSession() {
+        session = nil
+    }
+
     /// Ends the current session and persists its finalized segments as a `SessionTranscript`
     /// (FR-012). Segments that never reached `.finalized` (e.g. an utterance cut off mid-stream
     /// by a hard stop) are dropped, per `SessionTranscript`'s finalized-only precondition.

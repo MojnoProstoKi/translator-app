@@ -23,9 +23,10 @@ fi
 
 echo "==> assembling $BUILD_DIR"
 rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR/Contents/MacOS"
+mkdir -p "$BUILD_DIR/Contents/MacOS" "$BUILD_DIR/Contents/Resources"
 cp "$BIN_PATH" "$BUILD_DIR/Contents/MacOS/$APP_NAME"
 cp Resources/Info.plist "$BUILD_DIR/Contents/Info.plist"
+cp Resources/AppIcon.icns "$BUILD_DIR/Contents/Resources/AppIcon.icns"
 
 echo "==> ad-hoc codesign"
 codesign --force --deep --sign - "$BUILD_DIR"
