@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import Foundation
 import Translation
 import TranslationEngine
@@ -7,10 +6,10 @@ import TranslationEngine
 private let bundleIdentifier = "com.translator.RealtimeTranslator"
 
 /// Ties the session controller, overlay window, permissions, consent reminder, and session
-/// recording/history together so the menu bar UI (RealtimeTranslatorApp.swift) has a single
+/// recording/history together so the menu bar UI (StatusItemController.swift) has a single
 /// object to drive.
 @MainActor
-public final class AppCoordinator: ObservableObject {
+public final class AppCoordinator {
     public let sessionController: TranslationSessionController
     public let permissionsManager = PermissionsManager()
     public let sessionHistory: SessionHistoryViewModel
@@ -24,9 +23,8 @@ public final class AppCoordinator: ObservableObject {
     private var sessionNamingWindow: SessionNamingWindowController?
     private let callAppMonitor = CallAppMonitor()
     private let callReminderNotifier = CallReminderNotifier()
-    private var cancellables: Set<AnyCancellable> = []
 
-    @Published public private(set) var lastError: String?
+    public private(set) var lastError: String?
 
     public init() {
         let controller = TranslationSessionController()
@@ -70,15 +68,6 @@ public final class AppCoordinator: ObservableObject {
             Task { @MainActor in self?.startSystemAudio() }
         }
         callAppMonitor.start()
-
-        // `sessionController` is a nested ObservableObject: SwiftUI only re-renders views that
-        // directly observe an object whose *own* objectWillChange fires. Without this, MenuBarExtra
-        // (which observes `AppCoordinator`, not `sessionController`) would never notice
-        // `isRunning`/`sourceLostMessage` changing — e.g. the menu staying on "Остановить перевод"
-        // after a stop. Forwarding republishes the change up to `AppCoordinator.objectWillChange`.
-        controller.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
 
         // FR-010: request both permissions explicitly, right at launch, rather than only ever
         // implicitly through first use. Confirmed by manual testing that this was missing
