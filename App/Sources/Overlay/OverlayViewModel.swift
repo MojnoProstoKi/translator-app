@@ -50,12 +50,22 @@ public final class OverlayViewModel: ObservableObject {
         return lines.last(where: { !$0.translatedText.isEmpty })?.translatedText
     }
 
+    /// Whether the overlay asks macOS to leave it out of screen sharing/recording
+    /// (`NSWindow.sharingType = .none`, applied by `OverlayWindowController`). Best effort only:
+    /// capture apps built on ScreenCaptureKit may ignore it. Remembered across launches.
+    @Published public private(set) var isHiddenFromScreenSharing: Bool
+
+    private static let hiddenFromScreenSharingKey = "com.translator.overlay.hiddenFromScreenSharing"
+
     private let maxVisibleLines: Int
+    private let userDefaults: UserDefaults
 
     /// 50 (not the old fixed-at-4 limit) now that `OverlayView`'s transcript scrolls — this is
     /// just a sane bound on a single session's in-memory history, not a "visible at once" cap.
-    public init(maxVisibleLines: Int = 50) {
+    public init(maxVisibleLines: Int = 50, userDefaults: UserDefaults = .standard) {
         self.maxVisibleLines = maxVisibleLines
+        self.userDefaults = userDefaults
+        self.isHiddenFromScreenSharing = userDefaults.bool(forKey: Self.hiddenFromScreenSharingKey)
     }
 
     /// Applies one pipeline event: updates the line for its segment if present, otherwise
@@ -88,6 +98,11 @@ public final class OverlayViewModel: ObservableObject {
 
     public func toggleCompact() {
         isCompact.toggle()
+    }
+
+    public func toggleHiddenFromScreenSharing() {
+        isHiddenFromScreenSharing.toggle()
+        userDefaults.set(isHiddenFromScreenSharing, forKey: Self.hiddenFromScreenSharingKey)
     }
 
     public func reportError(_ message: String) {

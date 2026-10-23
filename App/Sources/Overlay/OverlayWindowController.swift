@@ -9,12 +9,15 @@ import SwiftUI
 public final class OverlayWindowController: NSWindowController, NSWindowDelegate {
     private let onCloseRequested: () -> Void
     private var compactObservation: AnyCancellable?
+    private var screenSharingObservation: AnyCancellable?
+    private let hostingView: NSHostingView<OverlayView>
     /// Expanded-mode size to restore when leaving compact mode — kept so a panel the user
     /// resized doesn't snap back to the default size every time it's expanded.
     private var expandedSize: NSSize?
+    private var isCompact = false
 
     private static let expandedMinSize = NSSize(width: 360, height: 160)
-    private static let compactHeight = OverlayView.titlebarRowHeight
+    private static let compactHeight = OverlayView.compactHeight
     private static let compactMinWidth: CGFloat = 260
 
     /// - Parameter onCloseRequested: called when the user clicks the panel's close button.
@@ -23,6 +26,40 @@ public final class OverlayWindowController: NSWindowController, NSWindowDelegate
     ///   перевод" action, rather than leaving it disabled as dead UI (as it was before `.closable`
     ///   was added to the style mask).
     public init(viewModel: OverlayViewModel, onCloseRequested: @escaping () -> Void) {
+        let panel = Self.makePanel()
+
+        let hostingView = NSHostingView(rootView: OverlayView(viewModel: viewModel))
+        // Size limits are enforced in `windowWillResize` instead — left to SwiftUI, the
+        // still-expanded content's minimum height kept the panel from shrinking to compact. (With
+        // this off, the hosting view also resets the window's `minSize`/`maxSize` on every update,
+        // so those can't be used either.)
+        hostingView.sizingOptions = []
+        panel.contentView = hostingView
+
+        self.hostingView = hostingView
+        self.onCloseRequested = onCloseRequested
+        super.init(window: panel)
+
+        panel.delegate = self
+        positionInBottomTrailingCorner()
+
+        // `dropFirst`: the initial value needs no resize; `removeDuplicates` so re-publishing
+        // the same value doesn't overwrite `expandedSize` with the compact size.
+        compactObservation = viewModel.$isCompact
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] isCompact in self?.applyCompactMode(isCompact) }
+
+        // No `dropFirst`: the remembered setting has to apply from the first time the panel shows.
+        screenSharingObservation = viewModel.$isHiddenFromScreenSharing
+            .sink { [weak self] isHidden in
+                // Deferred: un-hiding replaces the panel, and this fires from a click on a button
+                // inside that very panel — swap it once that event has finished.
+                DispatchQueue.main.async { self?.applyScreenSharing(hidden: isHidden) }
+            }
+    }
+
+    private static func makePanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 320),
             styleMask: [.nonactivatingPanel, .titled, .closable, .fullSizeContentView, .resizable],
@@ -44,26 +81,7 @@ public final class OverlayWindowController: NSWindowController, NSWindowDelegate
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hidesOnDeactivate = false
-        panel.minSize = Self.expandedMinSize
-
-        let hostingView = NSHostingView(rootView: OverlayView(viewModel: viewModel))
-        // The panel's min/max size is managed here (see `applyCompactMode`) — left to SwiftUI, the
-        // still-expanded content's minimum height kept the panel from shrinking to compact.
-        hostingView.sizingOptions = []
-        panel.contentView = hostingView
-
-        self.onCloseRequested = onCloseRequested
-        super.init(window: panel)
-
-        panel.delegate = self
-        positionInBottomTrailingCorner()
-
-        // `dropFirst`: the initial value needs no resize; `removeDuplicates` so re-publishing
-        // the same value doesn't overwrite `expandedSize` with the compact size.
-        compactObservation = viewModel.$isCompact
-            .dropFirst()
-            .removeDuplicates()
-            .sink { [weak self] isCompact in self?.applyCompactMode(isCompact) }
+        return panel
     }
 
     @available(*, unavailable)
@@ -79,23 +97,58 @@ public final class OverlayWindowController: NSWindowController, NSWindowDelegate
         return false
     }
 
+    /// Limits the user's live resizing: compact mode is width-only, expanded mode has a minimum
+    /// size. Not called for programmatic `setFrame`, so `applyCompactMode` isn't affected.
+    public func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        if isCompact {
+            return NSSize(width: max(frameSize.width, Self.compactMinWidth), height: Self.compactHeight)
+        }
+        return NSSize(
+            width: max(frameSize.width, Self.expandedMinSize.width),
+            height: max(frameSize.height, Self.expandedMinSize.height)
+        )
+    }
+
     /// Resizes the panel between the full transcript and the one-line strip, keeping its bottom
     /// edge in place (the panel starts in the bottom-trailing corner, so that's the edge the
-    /// user anchors on). Compact mode only allows horizontal resizing.
+    /// user anchors on).
     private func applyCompactMode(_ isCompact: Bool) {
         guard let window else { return }
+        self.isCompact = isCompact
         var frame = window.frame
         if isCompact {
             expandedSize = frame.size
-            window.minSize = NSSize(width: Self.compactMinWidth, height: Self.compactHeight)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: Self.compactHeight)
             frame.size.height = Self.compactHeight
         } else {
-            window.minSize = Self.expandedMinSize
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             frame.size = expandedSize ?? Self.expandedMinSize
         }
         window.setFrame(window.constrainFrameRect(frame, to: window.screen), display: true, animate: true)
+    }
+
+    /// Asks macOS to leave the panel out of screen sharing/recording, or to include it again.
+    /// AppKit won't take a window back out of `.none` (setting `.readOnly`/`.readWrite` afterwards
+    /// is silently ignored — confirmed on macOS 26), so un-hiding swaps in a fresh panel carrying
+    /// the same content and frame.
+    private func applyScreenSharing(hidden: Bool) {
+        guard let window else { return }
+        if hidden {
+            window.sharingType = .none
+            return
+        }
+        guard window.sharingType == .none else { return }
+
+        let replacement = Self.makePanel()
+        replacement.setFrame(window.frame, display: false)
+        let wasVisible = window.isVisible
+        window.delegate = nil
+        window.orderOut(nil)
+        window.contentView = nil
+        replacement.contentView = hostingView
+        replacement.delegate = self
+        self.window = replacement
+        if wasVisible {
+            replacement.orderFrontRegardless()
+        }
     }
 
     private func positionInBottomTrailingCorner() {

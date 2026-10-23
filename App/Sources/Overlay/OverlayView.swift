@@ -12,8 +12,10 @@ public struct OverlayView: View {
     }
 
     /// Height of the row the panel's (transparent) titlebar occupies — the close button sits at
-    /// its leading edge. Compact mode shrinks the panel to exactly this row.
+    /// its leading edge.
     static let titlebarRowHeight: CGFloat = 32
+    /// Compact mode: the titlebar row plus one line of translation below it.
+    static let compactHeight: CGFloat = titlebarRowHeight + 30
     /// Leading space reserved for the titlebar's traffic-light buttons.
     private static let trafficLightsInset: CGFloat = 78
 
@@ -32,11 +34,13 @@ public struct OverlayView: View {
         .ignoresSafeArea()
     }
 
-    /// The titlebar row: traffic lights on the leading side, `content`, then the toggle button.
-    private func titlebarRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+    /// The titlebar row: traffic lights on the leading side; `accessories`, then the toggle
+    /// buttons on the trailing side.
+    private func titlebarRow<Accessories: View>(@ViewBuilder _ accessories: () -> Accessories) -> some View {
         HStack(spacing: 10) {
-            content()
             Spacer(minLength: 0)
+            accessories()
+            screenSharingToggleButton
             compactToggleButton
         }
         .padding(.leading, Self.trafficLightsInset)
@@ -44,23 +48,48 @@ public struct OverlayView: View {
         .frame(height: Self.titlebarRowHeight)
     }
 
-    /// One-line strip: newest translation (head-truncated, so the words being spoken right now
-    /// stay visible) and the level meter, squeezed into the titlebar row.
+    /// Collapsed strip: the titlebar row (with the level meter next to the buttons), then the
+    /// newest translation on its own line below — head-truncated, so the words being spoken right
+    /// now stay visible.
     private var compactBody: some View {
-        titlebarRow {
-            if viewModel.errorBannerText != nil {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+        VStack(alignment: .leading, spacing: 0) {
+            titlebarRow {
+                LevelMeterView(level: viewModel.audioLevel)
+                    .frame(width: 28)
             }
-            Text(viewModel.compactText ?? "Слушаю…")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(viewModel.compactText == nil ? .secondary : .primary)
-                .lineLimit(1)
-                .truncationMode(.head)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            LevelMeterView(level: viewModel.audioLevel)
-                .frame(width: 28)
+            HStack(spacing: 6) {
+                if viewModel.errorBannerText != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+                Text(viewModel.compactText ?? "Слушаю…")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(viewModel.compactText == nil ? .secondary : .primary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: Self.compactHeight - Self.titlebarRowHeight, alignment: .top)
         }
+    }
+
+    private var screenSharingToggleButton: some View {
+        Button {
+            viewModel.toggleHiddenFromScreenSharing()
+        } label: {
+            Image(systemName: viewModel.isHiddenFromScreenSharing ? "eye.slash.fill" : "eye")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(viewModel.isHiddenFromScreenSharing ? Color.accentColor : Color.secondary)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(
+            viewModel.isHiddenFromScreenSharing
+                ? "Скрыто от демонстрации экрана (работает не во всех приложениях). Нажмите, чтобы показывать"
+                : "Скрыть от демонстрации экрана (работает не во всех приложениях)"
+        )
     }
 
     private var compactToggleButton: some View {
