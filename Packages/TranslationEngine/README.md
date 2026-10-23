@@ -17,7 +17,8 @@ swift test --filter TranslationEngineTests   # unit + contract тесты (фе�
 
 `TranslationEngineIntegrationTests` и часть `TranslationEngineTests` (`TranslateCLIContractTests`)
 используют реальные `SpeechAnalyzer`/`Translation` и требуют интерактивно предоставленных
-разрешений (распознавание речи / микрофон / системный звук) — не запускаются автоматически, см.
+разрешений (распознавание речи / микрофон / системный звук) — не запускаются автоматически
+(`TranslateCLIContractTests` пропускается, пока не задано `RUN_LIVE_TESTS=1`), см.
 [`quickstart.md`](../../specs/001-realtime-speech-translation/quickstart.md).
 
 ## CLI

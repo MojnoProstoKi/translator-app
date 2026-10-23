@@ -5,10 +5,16 @@ import XCTest
 ///
 /// ⚠️ This spawns the real `translate-cli` binary, which invokes the real on-device
 /// SpeechAnalyzer/Translation frameworks — the same permission caveats as
-/// TranslationEngineIntegrationTests apply. Not run automatically in CI or during this
-/// implementation session; run manually after `swift build` with the built binary path adjusted
-/// as needed. See quickstart.md.
+/// TranslationEngineIntegrationTests apply, and without a permission grant the binary hangs
+/// rather than failing. Skipped unless `RUN_LIVE_TESTS=1` is set; run manually after
+/// `swift build`. See quickstart.md.
 final class TranslateCLIContractTests: XCTestCase {
+    override func setUpWithError() throws {
+        guard ProcessInfo.processInfo.environment["RUN_LIVE_TESTS"] == "1" else {
+            throw XCTSkip("Live on-device test — set RUN_LIVE_TESTS=1 to run")
+        }
+    }
+
     private func fixtureURL(_ name: String) -> URL {
         Bundle.module.url(forResource: name, withExtension: "wav", subdirectory: "Fixtures")!
     }
