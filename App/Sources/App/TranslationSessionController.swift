@@ -156,14 +156,14 @@ public final class TranslationSessionController: ObservableObject {
         fatalError("RealtimeTranslator requires macOS 26 or later")
     }
 
-    // Wrapped in `GlossaryTranslationProvider` (English→Russian only — see
-    // `TranslationDirection.appliesGlossary`) so common IT jargon (pull request, backend,
-    // deploy, …) comes through as what a Russian-speaking developer would actually say instead
-    // of Apple's more literal/formal translation.
+    // Wrapped in `GlossaryTranslationProvider` with the direction's own curated glossary
+    // (`TranslationDirection.glossary`) so common IT jargon (pull request, backend, deploy, …)
+    // comes through as what a developer would actually say instead of Apple's more literal/formal
+    // translation.
     private func makeTranslationProvider() -> TranslationProvider {
         if #available(macOS 26.0, *) {
             let apple = AppleTranslationProvider(source: direction.sourceLanguage, target: direction.targetLanguage)
-            return direction.appliesGlossary ? GlossaryTranslationProvider(wrapping: apple) : apple
+            return GlossaryTranslationProvider(wrapping: apple, glossary: direction.glossary)
         }
         fatalError("RealtimeTranslator requires macOS 26 or later")
     }
