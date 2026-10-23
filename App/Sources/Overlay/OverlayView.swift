@@ -11,7 +11,80 @@ public struct OverlayView: View {
         self.viewModel = viewModel
     }
 
+    /// Height of the row the panel's (transparent) titlebar occupies — the close button sits at
+    /// its leading edge. Compact mode shrinks the panel to exactly this row.
+    static let titlebarRowHeight: CGFloat = 32
+    /// Leading space reserved for the titlebar's traffic-light buttons.
+    private static let trafficLightsInset: CGFloat = 78
+
     public var body: some View {
+        Group {
+            if viewModel.isCompact {
+                compactBody
+            } else {
+                expandedBody
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        // Extends the card under the transparent titlebar so the toggle button (and, compact, the
+        // newest translation) can share the close button's row instead of a separate empty strip.
+        .ignoresSafeArea()
+    }
+
+    /// The titlebar row: traffic lights on the leading side, `content`, then the toggle button.
+    private func titlebarRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 10) {
+            content()
+            Spacer(minLength: 0)
+            compactToggleButton
+        }
+        .padding(.leading, Self.trafficLightsInset)
+        .padding(.trailing, 10)
+        .frame(height: Self.titlebarRowHeight)
+    }
+
+    /// One-line strip: newest translation (head-truncated, so the words being spoken right now
+    /// stay visible) and the level meter, squeezed into the titlebar row.
+    private var compactBody: some View {
+        titlebarRow {
+            if viewModel.errorBannerText != nil {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+            Text(viewModel.compactText ?? "Слушаю…")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(viewModel.compactText == nil ? .secondary : .primary)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            LevelMeterView(level: viewModel.audioLevel)
+                .frame(width: 28)
+        }
+    }
+
+    private var compactToggleButton: some View {
+        Button {
+            viewModel.toggleCompact()
+        } label: {
+            Image(systemName: viewModel.isCompact ? "chevron.up" : "chevron.down")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(viewModel.isCompact ? "Развернуть" : "Свернуть")
+    }
+
+    private var expandedBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            titlebarRow {}
+            expandedContent
+        }
+    }
+
+    private var expandedContent: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let consentText = viewModel.consentBannerText {
                 Text(consentText)
@@ -59,9 +132,10 @@ public struct OverlayView: View {
                 .frame(height: 18)
                 .padding(.top, 2)
         }
-        .padding(14)
+        .padding(.horizontal, 14)
+        .padding(.top, 4)
+        .padding(.bottom, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     @ViewBuilder

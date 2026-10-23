@@ -38,6 +38,17 @@ public final class OverlayViewModel: ObservableObject {
     /// `onLevel` — powers the equalizer-style meter so the user can see *when* to speak/play
     /// audio instead of guessing (requested explicitly).
     @Published public var audioLevel: Float = 0
+    /// Whether the overlay is collapsed into a one-line strip showing only the newest
+    /// translation. Purely visual — the session keeps running and recording either way.
+    /// `OverlayWindowController` observes this to resize the panel.
+    @Published public var isCompact: Bool = false
+
+    /// What the compact strip shows: the error if there is one, otherwise the newest line's
+    /// translation (partial or final), or `nil` while nothing has been translated yet.
+    public var compactText: String? {
+        if let errorBannerText { return errorBannerText }
+        return lines.last(where: { !$0.translatedText.isEmpty })?.translatedText
+    }
 
     private let maxVisibleLines: Int
 
@@ -73,6 +84,10 @@ public final class OverlayViewModel: ObservableObject {
         if lines.count > maxVisibleLines {
             lines.removeFirst(lines.count - maxVisibleLines)
         }
+    }
+
+    public func toggleCompact() {
+        isCompact.toggle()
     }
 
     public func reportError(_ message: String) {

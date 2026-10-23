@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// A small, floating, non-activating panel that shows the live translation on top of every
@@ -7,6 +8,14 @@ import SwiftUI
 @MainActor
 public final class OverlayWindowController: NSWindowController, NSWindowDelegate {
     private let onCloseRequested: () -> Void
+    private var compactObservation: AnyCancellable?
+    /// Expanded-mode size to restore when leaving compact mode — kept so a panel the user
+    /// resized doesn't snap back to the default size every time it's expanded.
+    private var expandedSize: NSSize?
+
+    private static let expandedMinSize = NSSize(width: 360, height: 160)
+    private static let compactHeight = OverlayView.titlebarRowHeight
+    private static let compactMinWidth: CGFloat = 260
 
     /// - Parameter onCloseRequested: called when the user clicks the panel's close button.
     ///   The panel itself is never actually torn down (it's reused across sessions) — this just
@@ -35,15 +44,26 @@ public final class OverlayWindowController: NSWindowController, NSWindowDelegate
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hidesOnDeactivate = false
-        panel.minSize = NSSize(width: 360, height: 160)
+        panel.minSize = Self.expandedMinSize
 
-        panel.contentView = NSHostingView(rootView: OverlayView(viewModel: viewModel))
+        let hostingView = NSHostingView(rootView: OverlayView(viewModel: viewModel))
+        // The panel's min/max size is managed here (see `applyCompactMode`) — left to SwiftUI, the
+        // still-expanded content's minimum height kept the panel from shrinking to compact.
+        hostingView.sizingOptions = []
+        panel.contentView = hostingView
 
         self.onCloseRequested = onCloseRequested
         super.init(window: panel)
 
         panel.delegate = self
         positionInBottomTrailingCorner()
+
+        // `dropFirst`: the initial value needs no resize; `removeDuplicates` so re-publishing
+        // the same value doesn't overwrite `expandedSize` with the compact size.
+        compactObservation = viewModel.$isCompact
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] isCompact in self?.applyCompactMode(isCompact) }
     }
 
     @available(*, unavailable)
@@ -57,6 +77,25 @@ public final class OverlayWindowController: NSWindowController, NSWindowDelegate
         onCloseRequested()
         hide()
         return false
+    }
+
+    /// Resizes the panel between the full transcript and the one-line strip, keeping its bottom
+    /// edge in place (the panel starts in the bottom-trailing corner, so that's the edge the
+    /// user anchors on). Compact mode only allows horizontal resizing.
+    private func applyCompactMode(_ isCompact: Bool) {
+        guard let window else { return }
+        var frame = window.frame
+        if isCompact {
+            expandedSize = frame.size
+            window.minSize = NSSize(width: Self.compactMinWidth, height: Self.compactHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: Self.compactHeight)
+            frame.size.height = Self.compactHeight
+        } else {
+            window.minSize = Self.expandedMinSize
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            frame.size = expandedSize ?? Self.expandedMinSize
+        }
+        window.setFrame(window.constrainFrameRect(frame, to: window.screen), display: true, animate: true)
     }
 
     private func positionInBottomTrailingCorner() {
