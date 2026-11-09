@@ -21,8 +21,6 @@ public final class AppCoordinator {
     private var translationPreparationWindow: TranslationPreparationWindowController?
     private var permissionGuidanceWindow: PermissionGuidanceWindowController?
     private var sessionNamingWindow: SessionNamingWindowController?
-    private let callAppMonitor = CallAppMonitor()
-    private let callReminderNotifier = CallReminderNotifier()
 
     public private(set) var lastError: String?
 
@@ -57,18 +55,6 @@ public final class AppCoordinator {
 
         consentReminder.remindAtFirstLaunchIfNeeded()
 
-        // Notices when a call/meeting app (Zoom, Teams, FaceTime, …) launches and offers to turn
-        // on translation, so the user doesn't have to remember to open the menu themselves.
-        // Skipped while a session is already running — nothing useful to suggest at that point.
-        callAppMonitor.onCallAppDetected = { [weak self] appName in
-            guard let self, !self.sessionController.isRunning else { return }
-            self.callReminderNotifier.notifyCallAppDetected(appName: appName)
-        }
-        callReminderNotifier.onStartTranslationRequested = { [weak self] in
-            Task { @MainActor in self?.startSystemAudio() }
-        }
-        callAppMonitor.start()
-
         // FR-010: request both permissions explicitly, right at launch, rather than only ever
         // implicitly through first use. Confirmed by manual testing that this was missing
         // entirely for the microphone (its `requestPermission()` existed but nothing ever
@@ -83,7 +69,6 @@ public final class AppCoordinator {
                 _ = await permissionsManager.requestPermission(for: sourceType)
             }
         }
-        await callReminderNotifier.requestAuthorizationIfNeeded()
     }
 
     public func startSystemAudio() {
