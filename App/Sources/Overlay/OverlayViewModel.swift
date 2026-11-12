@@ -96,6 +96,11 @@ public final class OverlayViewModel: ObservableObject {
         }
     }
 
+    /// Takes a line back off screen — used when it is retracted as a cross-source duplicate.
+    public func remove(segmentId: UUID) {
+        lines.removeAll { $0.id == segmentId }
+    }
+
     public func toggleCompact() {
         isCompact.toggle()
     }

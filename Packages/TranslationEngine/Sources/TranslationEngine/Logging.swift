@@ -41,6 +41,11 @@ public enum EngineLog {
         )
     }
 
+    /// Logs a non-content diagnostic that is not an error (e.g. which capture mode got enabled).
+    public static func info(_ message: String) {
+        logger.info("\(message, privacy: .public)")
+    }
+
     /// Logs a non-content error/diagnostic (e.g. permission denied, provider failure).
     public static func error(_ message: String) {
         logger.error("\(message, privacy: .public)")

@@ -24,7 +24,32 @@ public final class MicrophoneSource: AudioCaptureSource, @unchecked Sendable {
     public var onLevel: (@Sendable (Float) -> Void)?
     private var lastLevelReportedAt = Date.distantPast
 
-    public init() {}
+    /// Apple's voice processing (acoustic echo cancellation, the same one FaceTime uses): subtracts
+    /// what the Mac is playing through its speakers from the mic signal, so the interlocutor's
+    /// voice from a call doesn't get recognized a second time as "microphone". Only worth it when
+    /// system audio is captured at the same time — it also colours the mic sound a little.
+    private let voiceProcessing: Bool
+
+    public init(voiceProcessing: Bool = false) {
+        self.voiceProcessing = voiceProcessing
+    }
+
+    private func enableVoiceProcessingIfRequested(on inputNode: AVAudioInputNode) {
+        guard voiceProcessing else { return }
+        do {
+            try inputNode.setVoiceProcessingEnabled(true)
+            // By default voice processing turns every other app's audio down while the mic is
+            // open — that would make the call itself quieter. Keep that to the minimum.
+            inputNode.voiceProcessingOtherAudioDuckingConfiguration = AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
+                enableAdvancedDucking: false,
+                duckingLevel: .min
+            )
+            EngineLog.info("MicrophoneSource: voice processing enabled, format \(inputNode.outputFormat(forBus: 0))")
+        } catch {
+            // Not fatal: fall back to the raw mic; the text-based duplicate filter still applies.
+            EngineLog.error("MicrophoneSource: could not enable voice processing: \(error)")
+        }
+    }
 
     public func requestPermission() async -> PermissionState {
         let granted = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
@@ -39,6 +64,8 @@ public final class MicrophoneSource: AudioCaptureSource, @unchecked Sendable {
 
     public func start() throws -> AsyncStream<AudioBuffer> {
         let inputNode = engine.inputNode
+        enableVoiceProcessingIfRequested(on: inputNode)
+        // Read after enabling voice processing — it changes the input node's format.
         let format = inputNode.outputFormat(forBus: 0)
 
         return AsyncStream { continuation in

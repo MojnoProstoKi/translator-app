@@ -45,11 +45,18 @@ public final class SessionRecorder {
                 at: Date()
             )
         } else {
-            var segment = SpeechSegment(sessionId: session.id, sourceType: event.sourceType, startedAt: Date())
+            // Keyed by the pipeline's `segmentId` so later partial/final updates (and retractions)
+            // find this same segment instead of each update appending a new one.
+            var segment = SpeechSegment(id: event.segmentId, sessionId: session.id, sourceType: event.sourceType, startedAt: Date())
             segment.apply(recognizedText: event.originalText, translatedText: event.translatedText, isFinal: event.isFinal, at: Date())
             session.segments.append(segment)
         }
         self.session = session
+    }
+
+    /// Forgets one segment — used when it is retracted as a cross-source duplicate.
+    public func remove(segmentId: UUID) {
+        session?.segments.removeAll { $0.id == segmentId }
     }
 
     /// Drops the current session without persisting anything — used when the user declines to

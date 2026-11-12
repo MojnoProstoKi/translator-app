@@ -22,6 +22,9 @@ public final class TranslationSessionController: ObservableObject {
     /// `SessionRecorder` (T037) to build the persisted transcript without this controller
     /// needing to know about storage.
     public var onEvent: ((TranslatedSegmentEvent) -> Void)?
+    /// A segment already passed to `onEvent` turned out to be a cross-source duplicate (mic
+    /// picking up the speakers) and was taken back off screen — drop it from the recording too.
+    public var onSegmentRetracted: ((UUID) -> Void)?
     /// Invoked once a session ends, whether by explicit stop or source loss (FR-014) — used by
     /// `SessionRecorder` to finalize and save the transcript.
     public var onSessionEnded: (() -> Void)?
@@ -77,7 +80,9 @@ public final class TranslationSessionController: ObservableObject {
                 }
                 return source
             case .microphone:
-                let source = MicrophoneSource()
+                // Echo cancellation only when the call's audio is captured too (combined mode):
+                // then the speakers leaking into the mic is the whole duplicate-lines problem.
+                let source = MicrophoneSource(voiceProcessing: sourceTypes.contains(.systemAudio))
                 source.onLevel = { [weak self] level in
                     Task { @MainActor in self?.overlayViewModel.audioLevel = level }
                 }
@@ -115,9 +120,17 @@ public final class TranslationSessionController: ObservableObject {
                 // it (confirmed by manual testing). Skipping it here also keeps it out of the
                 // saved session transcript, not just the overlay.
                 guard event.originalText.rangeOfCharacter(from: .letters) != nil else { continue }
-                if self?.duplicateFilter?.shouldSuppress(event) == true { continue }
-                self?.overlayViewModel.apply(event)
-                self?.onEvent?(event)
+                guard let self else { return }
+                if let filter = self.duplicateFilter {
+                    let decision = filter.process(event)
+                    for retractedId in decision.retractedSegmentIds {
+                        self.overlayViewModel.remove(segmentId: retractedId)
+                        self.onSegmentRetracted?(retractedId)
+                    }
+                    guard decision.shows else { continue }
+                }
+                self.overlayViewModel.apply(event)
+                self.onEvent?(event)
             }
             guard let self else { return }
             // FR-014: if the stream ended on its own (not via stop()), a source was lost.
@@ -166,85 +179,5 @@ public final class TranslationSessionController: ObservableObject {
             return GlossaryTranslationProvider(wrapping: apple, glossary: direction.glossary)
         }
         fatalError("RealtimeTranslator requires macOS 26 or later")
-    }
-}
-
-/// Drops a segment from one source when its recognized (original-language) text closely matches
-/// a segment already tracked from a *different* source within a short time window — the signature
-/// of one source acoustically leaking into the other (e.g. a call's audio playing through
-/// speakers and being picked up by the microphone too), rather than genuinely distinct concurrent
-/// speech. Whichever source's matching segment is *first* seen for a given piece of speech is the
-/// one kept on screen; the later-arriving duplicate is suppressed for its whole lifetime (it keeps
-/// the same `segmentId` across its partial → final updates).
-///
-/// Deliberately text-based rather than audio-based (e.g. real echo cancellation): both sources are
-/// already independently transcribed by the time this runs, and comparing the resulting short
-/// phrases is far simpler than correlating raw audio between two differently-latent capture paths.
-@MainActor
-private final class CrossSourceDuplicateFilter {
-    private struct TrackedSegment {
-        let sourceType: AudioSourceType
-        var normalizedText: String
-        var lastSeen: Date
-    }
-
-    private let window: TimeInterval
-    private let similarityThreshold: Double
-    private var trackedBySegment: [UUID: TrackedSegment] = [:]
-    private var suppressedSegments: Set<UUID> = []
-
-    init(window: TimeInterval = 6, similarityThreshold: Double = 0.6) {
-        self.window = window
-        self.similarityThreshold = similarityThreshold
-    }
-
-    /// - Returns: `true` if `event` is a cross-source duplicate and should not be shown/recorded.
-    func shouldSuppress(_ event: TranslatedSegmentEvent, now: Date = Date()) -> Bool {
-        trackedBySegment = trackedBySegment.filter { now.timeIntervalSince($0.value.lastSeen) <= window }
-
-        if suppressedSegments.contains(event.segmentId) {
-            return true
-        }
-
-        let normalized = Self.normalize(event.originalText)
-        if trackedBySegment[event.segmentId] != nil {
-            // Already accepted and showing — keep updating it, but never re-evaluate (and
-            // possibly retroactively hide) a line the user has already seen.
-            trackedBySegment[event.segmentId]?.normalizedText = normalized
-            trackedBySegment[event.segmentId]?.lastSeen = now
-            return false
-        }
-
-        let isDuplicate = trackedBySegment.values.contains { tracked in
-            tracked.sourceType != event.sourceType
-                && Self.similarity(tracked.normalizedText, normalized) >= similarityThreshold
-        }
-        if isDuplicate {
-            suppressedSegments.insert(event.segmentId)
-            return true
-        }
-
-        trackedBySegment[event.segmentId] = TrackedSegment(
-            sourceType: event.sourceType,
-            normalizedText: normalized,
-            lastSeen: now
-        )
-        return false
-    }
-
-    private static func normalize(_ text: String) -> String {
-        let scalars = text.lowercased().unicodeScalars.map { scalar in
-            CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : " "
-        }
-        return String(scalars).split(separator: " ").joined(separator: " ")
-    }
-
-    private static func similarity(_ a: String, _ b: String) -> Double {
-        let wordsA = Set(a.split(separator: " "))
-        let wordsB = Set(b.split(separator: " "))
-        guard !wordsA.isEmpty, !wordsB.isEmpty else { return 0 }
-        let union = wordsA.union(wordsB).count
-        guard union > 0 else { return 0 }
-        return Double(wordsA.intersection(wordsB).count) / Double(union)
     }
 }

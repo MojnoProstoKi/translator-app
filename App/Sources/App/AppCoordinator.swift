@@ -49,6 +49,9 @@ public final class AppCoordinator {
         controller.onEvent = { [sessionRecorder] event in
             sessionRecorder.apply(event)
         }
+        controller.onSegmentRetracted = { [sessionRecorder] segmentId in
+            sessionRecorder.remove(segmentId: segmentId)
+        }
         controller.onSessionEnded = { [weak self] in
             self?.finishSession()
         }
